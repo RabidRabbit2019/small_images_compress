@@ -6,11 +6,11 @@
 
 static bool update_color( uint16_t a_color, uint16_t * a_color_table, uint8_t * a_lru, int & a_color_idx ) {
   int v_min_idx = 0;
-  uint8_t v_min_value = 0xFF;
+  uint8_t v_min_value = 63;
   
   for ( a_color_idx = 0; a_color_idx < 64; ++a_color_idx ) {
     if ( a_color_table[a_color_idx] == a_color ) {
-      a_lru[a_color_idx] = 0xFF;
+      a_lru[a_color_idx] = 63;
       for ( int i = 0; i < 64; ++i ) {
         if ( i == a_color_idx ) {
           continue;
@@ -28,7 +28,7 @@ static bool update_color( uint16_t a_color, uint16_t * a_color_table, uint8_t * 
     }
   }
   a_color_table[v_min_idx] = a_color;
-  a_lru[v_min_idx] = 0xFF;
+  a_lru[v_min_idx] = 63;
   a_color_idx = v_min_idx;
   for ( int i = 0; i < 64; ++i ) {
     if ( i == a_color_idx ) {
@@ -128,7 +128,6 @@ void zic_decompress_init( const uint8_t * a_src, int a_src_len, uint8_t * a_row,
   a_state.m_current_count = 0;
   ::memset( a_state.m_color_table, 0, sizeof(a_state.m_color_table) );
   ::memset( a_state.m_lru, 0, sizeof(a_state.m_lru) );
-  a_state.m_lru[0] = 1;
 }
 
 
