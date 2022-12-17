@@ -13,8 +13,9 @@ struct zic_decompress_state_s {
   int m_rows_count;
   int m_cols_count;
   int m_current_count;
+  uint32_t m_next_lru;
   uint16_t m_color_table[64];
-  uint8_t m_lru[64];
+  uint32_t m_lru[64];
   uint16_t m_last_color;
 };
 

@@ -4,21 +4,13 @@
 #include "zic_utils.h"
 
 
-static bool update_color( uint16_t a_color, uint16_t * a_color_table, uint8_t * a_lru, int & a_color_idx ) {
+static bool update_color( uint16_t a_color, uint16_t * a_color_table, uint32_t * a_lru, int & a_color_idx, uint32_t a_next_lru ) {
   int v_min_idx = 0;
-  uint8_t v_min_value = 63;
+  uint32_t v_min_value = 0xFFFFFFFF;
   
   for ( a_color_idx = 0; a_color_idx < 64; ++a_color_idx ) {
     if ( a_color_table[a_color_idx] == a_color ) {
-      a_lru[a_color_idx] = 63;
-      for ( int i = 0; i < 64; ++i ) {
-        if ( i == a_color_idx ) {
-          continue;
-        }
-        if ( a_lru[i] ) {
-          a_lru[i] -= 1;
-        }
-      }
+      a_lru[a_color_idx] = a_next_lru;
       return true;
     } else {
       if ( a_lru[a_color_idx] < v_min_value ) {
@@ -28,23 +20,16 @@ static bool update_color( uint16_t a_color, uint16_t * a_color_table, uint8_t * 
     }
   }
   a_color_table[v_min_idx] = a_color;
-  a_lru[v_min_idx] = 63;
+  a_lru[v_min_idx] = a_next_lru;
   a_color_idx = v_min_idx;
-  for ( int i = 0; i < 64; ++i ) {
-    if ( i == a_color_idx ) {
-      continue;
-    }
-    if ( a_lru[i] ) {
-      a_lru[i] -= 1;
-    }
-  }
   
   return false;
 }
 
 int zic_compress( const uint16_t * a_src, int a_src_len, uint8_t * a_dst, int a_dst_len ) {
   uint16_t v_color_table[64];
-  uint8_t v_lru[64];
+  uint32_t v_lru[64];
+  uint32_t v_next_lru = 0;
   
   ::memset( v_color_table, 0, sizeof(v_color_table) );
   ::memset( v_lru, 0, sizeof(v_lru) );
@@ -82,7 +67,7 @@ int zic_compress( const uint16_t * a_src, int a_src_len, uint8_t * a_dst, int a_
         }
       }
       // check existing for new color
-      if ( update_color( v_color, v_color_table, v_lru, v_last_color_idx ) ) {
+      if ( update_color( v_color, v_color_table, v_lru, v_last_color_idx, ++v_next_lru ) ) {
         // color exists, write out ref to color
         if ( a_dst_len-- ) {
           *a_dst++ = 0x80 | (uint8_t)v_last_color_idx;
@@ -124,6 +109,7 @@ void zic_decompress_init( const uint8_t * a_src, int a_src_len, uint8_t * a_row,
   a_state.m_row_ptr = a_row;
   a_state.m_cols_count = a_cols_count;
   a_state.m_rows_count = a_rows_count;
+  a_state.m_next_lru = 0;
   a_state.m_last_color = 0x8000;
   a_state.m_current_count = 0;
   ::memset( a_state.m_color_table, 0, sizeof(a_state.m_color_table) );
@@ -132,7 +118,7 @@ void zic_decompress_init( const uint8_t * a_src, int a_src_len, uint8_t * a_row,
 
 
 bool zic_decompress_row( zic_decompress_state_s & a_state ) {
-  uint8_t v_b, v_b1, v_b2;
+  uint8_t v_b;
   uint16_t v_color;
   int v_last_color_idx;
   int v_cols = 0;
@@ -142,15 +128,13 @@ bool zic_decompress_row( zic_decompress_state_s & a_state ) {
   if ( a_state.m_current_count > 0 ) {
 #ifdef TARGET_IS_5_6_5
     v_color = (a_state.m_last_color & 0x1F) | ((a_state.m_last_color & 0x7FE0) << 1);
-    v_b1 = (uint8_t)(v_color >> 8);
-    v_b2 = (uint8_t)v_color;
+    v_color = (v_color >> 8) | (((uint8_t)v_color) << 8);
 #else
-    v_b1 = (uint8_t)(a_state.m_last_color >> 8);
-    v_b2 = (uint8_t)a_state.m_last_color;
+    v_color = (a_state.m_last_color >> 8) | (((uint8_t)a_state.m_last_color) << 8);
 #endif
     for (; a_state.m_current_count > 0; --a_state.m_current_count ) {
-      *v_dst++ = v_b1;
-      *v_dst++ = v_b2;
+      *((uint16_t *)v_dst) = v_color;
+      v_dst += 2;
       if ( ++v_cols >= a_state.m_cols_count ) {
         --a_state.m_current_count;
         return true;
@@ -164,7 +148,7 @@ bool zic_decompress_row( zic_decompress_state_s & a_state ) {
       // direct color, read as BE 16-bits
       if ( a_state.m_src_len-- ) {
         a_state.m_last_color = ((v_b & 0x7F) << 8) | *a_state.m_src++;
-        update_color( a_state.m_last_color, a_state.m_color_table, a_state.m_lru, v_last_color_idx );
+        update_color( a_state.m_last_color, a_state.m_color_table, a_state.m_lru, v_last_color_idx, ++a_state.m_next_lru );
         // write out last color, BE format
 #ifdef TARGET_IS_5_6_5
           v_color = (a_state.m_last_color & 0x1F) | ((a_state.m_last_color & 0x7FE0) << 1);
@@ -184,7 +168,7 @@ bool zic_decompress_row( zic_decompress_state_s & a_state ) {
         // ref to idx
         v_color = a_state.m_color_table[v_b & 0x3F];
         if ( v_color != a_state.m_last_color ) {
-          update_color( v_color, a_state.m_color_table, a_state.m_lru, v_last_color_idx );
+          update_color( v_color, a_state.m_color_table, a_state.m_lru, v_last_color_idx, ++a_state.m_next_lru );
           a_state.m_last_color = v_color;
         }
         // write out color, BE format
@@ -202,16 +186,14 @@ bool zic_decompress_row( zic_decompress_state_s & a_state ) {
         a_state.m_current_count = (v_b & 0x3F) + 1;
 #ifdef TARGET_IS_5_6_5
         v_color = (a_state.m_last_color & 0x1F) | ((a_state.m_last_color & 0x7FE0) << 1);
-        v_b1 = (uint8_t)(v_color >> 8);
-        v_b2 = (uint8_t)v_color;
+        v_color = (v_color >> 8) | (((uint8_t)v_color) << 8);
 #else
-        v_b1 = (uint8_t)(a_state.m_last_color >> 8);
-        v_b2 = (uint8_t)a_state.m_last_color;
+        v_color = (a_state.m_last_color >> 8) | (((uint8_t)a_state.m_last_color) << 8);
 #endif
         for ( ; a_state.m_current_count > 0; --a_state.m_current_count ) {
           // write out last color, BE format
-          *v_dst++ = v_b1;
-          *v_dst++ = v_b2;
+          *((uint16_t *)v_dst) = v_color;
+          v_dst += 2;
           if ( ++v_cols >= a_state.m_cols_count ) {
             --a_state.m_current_count;
             return true;
