@@ -4,7 +4,8 @@
 2. Code for decompess that data to R5G5B5 (or R5G6R5) image.
 
 ### notice
-  I am use this utility/code for project with ST7735 based 160x128 screen. Uncompressed R5G6R5 data has size 11120 bytes, compressed data 3758 bytes, it saves 7362 bytes.
+  I am use this utility/code for project with ST7735 based 160x128 screen. Uncompressed R5G6R5 data has size 52080 bytes, compressed data 17700 bytes, it saves 34380 bytes.
+  Full screen (160x128 R5G6R5) image display at 176 ms (48 MHz HCLK, 6 MHz SPI, double buffered output) from packed size 13945 bytes, BluePill, -O2 -flto, GCC 10.3.1, no HAL and etc.
 
 ## Build convert utility
   g++ zic_utils.cpp tga_2_src.cpp -O2 -s -Wall -Wextra -o tga_2_src
